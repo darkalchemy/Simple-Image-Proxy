@@ -14,6 +14,9 @@
         "spatie/image-optimizer": "^1.0",
         "guzzlehttp/guzzle": "~6.0"
     },
+    "require-dev": {
+      "mp091689/dump-die": "^1.0"
+    },
     "autoload": {
         "psr-4": {
             "ImageProxy\\": "app"

@@ -5,11 +5,9 @@ namespace ImageProxy;
 use Intervention\Image\ImageManager;
 use Blocktrail\CryptoJSAES\CryptoJSAES;
 use Spatie\ImageOptimizer\OptimizerChainFactory;
-use GuzzleHttp\Client;
 
 class DecryptUrl
 {
-
     private $keys;
 
     /**
@@ -31,17 +29,26 @@ class DecryptUrl
     {
         $uri = $request->getUri()->getQuery();
         $uri = explode('&uid=', base64_decode($uri));
+
         if (empty($uri[1]) || !array_key_exists($uri[1], $this->keys)) {
-            $image = $this->make_image(__DIR__ . "/../images/noposter.png");
+            try {
+                $image = $this->make_image(__DIR__ . '/../images/noposter.png');
+            } catch (\Exception $e) {
+                return null;
+            }
+
             return $image->response();
         }
-
         $url = CryptoJSAES::decrypt($uri[0], $this->keys[$uri[1]]);
         if (empty($url)) {
-            $image = $this->make_image(__DIR__ . "/../images/noposter.png");
+            try {
+                $image = $this->make_image(__DIR__ . '/../images/noposter.png');
+            } catch (\Exception $e) {
+                return null;
+            }
+
             return $image->response();
         }
-
         $pieces = parse_url($url);
         $width = $height = '';
         if (!empty($pieces['query'])) {
@@ -54,24 +61,47 @@ class DecryptUrl
             $width = $height = '';
             $pieces = implode('', $pieces);
         }
+        $pieces = trim($pieces, '?');
 
         if (!empty($pieces)) {
             $hash = hash('sha512', $pieces);
             $path = __DIR__ . "/../images/$hash";
 
             if (file_exists($path)) {
-                $image = $this->make_image($path, $width, $height);
+                try {
+                    $image = $this->make_image($path, $width, $height, function ($constraint) {
+                        $constraint->aspectRatio();
+                        $constraint->upsize();
+                    });
+                } catch (\Exception $e) {
+                    return null;
+                }
+
                 return $image->response();
             } else {
-                $client = new Client();
-                $response = $client->request('GET', $url, ['sink' => $path]);
-                if ($response->getStatusCode()) {
-                    $image = $this->make_image($path, $width, $height);
+                $client = new \GuzzleHttp\Client([
+                    'sink' => $path,
+                    'headers' => [
+                        'User-Agent' => 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.157 Safari/537.36',
+                    ],
+                ]);
+                $response = $client->request('GET', $url);
+                if ($response->getStatusCode() == 200) {
+                    try {
+                        $image = $this->make_image($path, $width, $height, function ($constraint) {
+                            $constraint->aspectRatio();
+                            $constraint->upsize();
+                        });
+                    } catch (\Exception $e) {
+                        return null;
+                    }
+
                     return $image->response();
                 }
             }
         }
-        $image = $this->make_image(__DIR__ . "/../images/noposter.png");
+        $image = $this->make_image(__DIR__ . '/../images/noposter.png');
+
         return $image->response();
     }
 
@@ -85,11 +115,23 @@ class DecryptUrl
     {
         $manager = new ImageManager();
 
-        if (!empty($width) && !empty($height)) {
-            $image = $manager->make($path)->resize($width, $height);
+        if (!empty($width) || !empty($height)) {
+            try {
+                $image = $manager->make($path)->resize($width, $height, function ($constraint) {
+                    $constraint->aspectRatio();
+                    $constraint->upsize();
+                });
+            } catch (\Exception $e) {
+                return null;
+            }
         } else {
-            $image = $manager->make($path);
+            try {
+                $image = $manager->make($path);
+            } catch (\Exception $e) {
+                return null;
+            }
         }
+
         return $image;
     }
 }
